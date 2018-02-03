@@ -54,6 +54,10 @@ let writeFile (tsPaths: string list) (fsPath: string): unit =
     let host = ts.createCompilerHost(options, setParentNodes)
     let program = ts.createProgram(ResizeArray tsPaths, options, host)
     let tsFiles = tsPaths |> List.map program.getSourceFile
+    let tsPaths' = resolveModule host program tsFiles
+    List.iter (printfn "%s") tsPaths'
+    let program = ts.createProgram(ResizeArray tsPaths', options, host)
+    let tsFiles = tsPaths' |> List.map program.getSourceFile
     let checker = program.getTypeChecker()
 
     let moduleNameMap =

@@ -677,3 +677,39 @@ let readSourceFile (checker: TypeChecker) (sfs: SourceFile list) (file: FsFile):
     { file with
         Modules = modules |> List.ofSeq
     }
+
+// TODO: Just want to know if it is undefined, there should be a better way. help me.
+[<Emit("$0 === undefined")>]
+let isUndefined (x: 'a) : bool = jsNative
+let resolveModule (host: CompilerHost) (program: Program) (sfs: SourceFile list) =
+    let rec readStatement (sd: Statement) =
+        match sd.kind with
+        | SyntaxKind.ExportDeclaration ->
+            readExportDeclaration (sd :?> ExportDeclaration)
+        | _ -> []
+    and readExportDeclaration (ex: ExportDeclaration) =
+        match ex.moduleSpecifier with
+        | Some ms ->
+            let sf = ex.getSourceFile()
+            let dir = path.dirname sf.fileName
+            let md = ms.getText().Trim([|'"'; '\''|])
+            let path = dir + "/" + md + ".d.ts"
+            printfn "ExportDeclaration moduleSpecifier: %s" path
+            let tsPaths = [path]
+            let options = program.getCompilerOptions()
+            let program = ts.createProgram(ResizeArray tsPaths, options, host, program)
+            let tsPaths =
+                tsPaths 
+                |> List.map program.getSourceFile
+                |> List.filter (isUndefined >> not)
+                |> List.map (fun sf -> sf.statements |> List.ofSeq)
+                |> List.concat
+                |> List.collect readStatement
+            path :: tsPaths
+        | None ->             
+            // printfn "exportDecl moduleSpecifier: None"
+            []
+    sfs
+    |> List.map (fun sf -> sf.statements |> List.ofSeq)
+    |> List.concat
+    |> List.collect readStatement
