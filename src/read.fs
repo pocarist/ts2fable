@@ -699,16 +699,16 @@ let resolveModule (host: CompilerHost) (program: Program) (sfs: SourceFile list)
             let options = program.getCompilerOptions()
             let program = ts.createProgram(ResizeArray tsPaths, options, host, program)
             let tsPaths =
-                tsPaths 
-                |> List.map program.getSourceFile
-                |> List.filter (isUndefined >> not)
-                |> List.map (fun sf -> sf.statements |> List.ofSeq)
-                |> List.concat
+                tsPaths
+                |> List.collect (fun ts -> 
+                    let sf = program.getSourceFile ts
+                    if isUndefined sf then []
+                    else sf.statements |> List.ofSeq
+                )
                 |> List.collect readStatement
             path :: tsPaths
         | None ->             
             // printfn "exportDecl moduleSpecifier: None"
             []
-    sfs
-    |> List.map (fun sf -> sf.fileName :: (sf.statements |> List.ofSeq |> List.collect readStatement))
-    |> List.concat
+    sfs        
+    |> List.collect (fun sf -> sf.fileName :: (sf.statements |> List.ofSeq |> List.collect readStatement))
