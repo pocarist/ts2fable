@@ -710,6 +710,5 @@ let resolveModule (host: CompilerHost) (program: Program) (sfs: SourceFile list)
             // printfn "exportDecl moduleSpecifier: None"
             []
     sfs
-    |> List.map (fun sf -> sf.statements |> List.ofSeq)
+    |> List.map (fun sf -> sf.fileName :: (sf.statements |> List.ofSeq |> List.collect readStatement))
     |> List.concat
-    |> List.collect readStatement
