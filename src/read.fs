@@ -688,8 +688,8 @@ let resolveModule (host: CompilerHost) (program: Program) (sfs: SourceFile list)
             readExportDeclaration (sd :?> ExportDeclaration)
         | _ -> []
     and readExportDeclaration (ex: ExportDeclaration) =
-        match ex.moduleSpecifier with
-        | Some ms ->
+        match ex.exportClause, ex.moduleSpecifier with
+        | None, Some ms ->
             let sf = ex.getSourceFile()
             let dir = path.dirname sf.fileName
             let md = ms.getText().Trim([|'"'; '\''|])
@@ -707,7 +707,7 @@ let resolveModule (host: CompilerHost) (program: Program) (sfs: SourceFile list)
                 )
                 |> List.collect readStatement
             path :: tsPaths
-        | None ->             
+        | _ ->             
             // printfn "exportDecl moduleSpecifier: None"
             []
     sfs        
