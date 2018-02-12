@@ -595,7 +595,28 @@ let readImportDeclaration(im: ImportDeclaration): FsType list =
                     )
             | U2.Case2 namedImports -> []
 
-let readStatement (checker: TypeChecker) (sd: Statement): FsType list =
+let myGetText pos end' (sourceFile: SourceFile) =
+    sourceFile.text
+
+let readExportDeclaration (sourceFile: SourceFile) (checker: TypeChecker) (ex: ExportDeclaration): FsType list =
+    match ex.exportClause, ex.moduleSpecifier with
+    | None, Some ms ->
+        printfn "ExportDeclaration moduleSpecifier: %A" ex
+        // let sf = ex.getSourceFile()
+        // printfn "sf=%A" sf
+        printfn "sourceFile=%A" sourceFile
+        let dir = path.dirname sourceFile.fileName
+        let md = ms.getText(sourceFile).Trim([|'"'; '\''|])
+        let tsPath = dir + "/" + md + ".d.ts"
+        let sf = createSourceFile tsPath
+        sf.statements
+        |> List.ofSeq
+        |> List.collect (readStatement sf checker)
+    | _ ->             
+        // printfn "exportDecl moduleSpecifier: None"
+        []
+
+let readStatement (sourceFile: SourceFile) (checker: TypeChecker) (sd: Statement): FsType list =
     match sd.kind with
     | SyntaxKind.InterfaceDeclaration ->
         [readInterface checker (sd :?> InterfaceDeclaration) |> FsType.Interface]
@@ -610,7 +631,7 @@ let readStatement (checker: TypeChecker) (sd: Statement): FsType list =
     | SyntaxKind.FunctionDeclaration ->
         [readFunctionDeclaration checker (sd :?> FunctionDeclaration) |> FsType.Function]
     | SyntaxKind.ModuleDeclaration ->
-        [readModuleDeclaration checker (sd :?> ModuleDeclaration) |> FsType.Module]
+        [readModuleDeclaration sourceFile checker (sd :?> ModuleDeclaration) |> FsType.Module]
     | SyntaxKind.ExportAssignment ->
         [readExportAssignment(sd :?> ExportAssignment)]
     | SyntaxKind.ImportDeclaration ->
@@ -620,7 +641,8 @@ let readStatement (checker: TypeChecker) (sd: Statement): FsType list =
         []
     | SyntaxKind.ExportDeclaration ->
         // printfn "TODO export statements"
-        []
+        let ex = sd :?> ExportDeclaration
+        readExportDeclaration sourceFile checker ex
     | SyntaxKind.ImportEqualsDeclaration ->
         let ime = sd :?> ImportEqualsDeclaration
         // printfn "import equals decl %s" (ime.getText())
@@ -632,17 +654,17 @@ let readModuleName(mn: ModuleName): string =
     | U2.Case1 id -> id.getText().Replace("\"","")
     | U2.Case2 sl -> sl.getText()
 
-let rec readModuleDeclaration checker (md: ModuleDeclaration): FsModule =
+let rec readModuleDeclaration (sourceFile: SourceFile) checker (md: ModuleDeclaration): FsModule =
     let types = List()
     md.ForEachChild (fun nd ->
         match nd.kind with
         | SyntaxKind.ModuleBlock ->
             let mb = nd :?> ModuleBlock
-            mb.statements |> List.ofSeq |> List.collect (readStatement checker) |> List.iter types.Add
+            mb.statements |> List.ofSeq |> List.collect (readStatement sourceFile checker) |> List.iter types.Add
         | SyntaxKind.DeclareKeyword -> ()
         | SyntaxKind.Identifier -> ()
         | SyntaxKind.ModuleDeclaration ->
-            readModuleDeclaration checker (nd :?> ModuleDeclaration) |> FsType.Module |> types.Add
+            readModuleDeclaration sourceFile checker (nd :?> ModuleDeclaration) |> FsType.Module |> types.Add
         | SyntaxKind.StringLiteral -> ()
         | SyntaxKind.ExportKeyword -> ()
         | _ -> printfn "unknown kind in ModuleDeclaration: %A" nd.kind
@@ -665,10 +687,17 @@ let readSourceFile (checker: TypeChecker) (sfs: SourceFile list) (file: FsFile):
             IsNamespace = false
             Name = ""
             Types =
+                // sfs
+                // |> List.map (fun sf -> sf.statements |> List.ofSeq)
+                // |> List.concat
+                // |> List.collect (readStatement checker)
                 sfs
-                |> List.map (fun sf -> sf.statements |> List.ofSeq)
+                |> List.map (fun sf -> 
+                    sf.statements 
+                    |> List.ofSeq
+                    |> List.collect (readStatement sf checker)
+                )
                 |> List.concat
-                |> List.collect (readStatement checker)
             HelperLines = []
             Attributes = []
         }
@@ -677,3 +706,25 @@ let readSourceFile (checker: TypeChecker) (sfs: SourceFile list) (file: FsFile):
     { file with
         Modules = modules |> List.ofSeq
     }
+
+let memoize f =
+  let m = ref Map.empty in
+  let rec g x =
+    match Map.tryFind x !m with
+    | Some ans -> ans
+    | None ->
+        let y = f g x in
+        m := Map.add x y !m
+        y
+  in
+  g
+let createSourceFile (tsPath: string) : SourceFile =
+    printfn "createSourceFile: tsPath=%s" tsPath
+    let f _self (p: string) =
+        let readFileSync () : string =
+            fs.readFileSync(!^(!^p), !^"utf8")
+
+        printfn "ts.createSourceFile: p=%s" p
+        ts.createSourceFile(p, readFileSync(), ScriptTarget.ES2015)
+    let memo = memoize f
+    memo tsPath
